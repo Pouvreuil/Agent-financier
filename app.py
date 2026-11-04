@@ -1,10 +1,10 @@
 
 import re
+import time
 from datetime import datetime
 
 import streamlit as st
 import yfinance as yf
-import pandas as pd
 from google import genai
 from google.genai import types
 
@@ -19,72 +19,70 @@ st.set_page_config(
     layout="centered"
 )
 
-MODEL = "gemini-3.8-flash"
+MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash"
+]
 
 SYSTEM_INSTRUCTION = """
 Tu es Mon Agent Financier, un assistant spécialisé dans
 l'investissement en actions et ETF.
 
-TON OBJECTIF :
-Aider l'utilisateur à prendre des décisions d'investissement
-éclairées, avec des réponses simples, concrètes et argumentées.
+Tu aides l'utilisateur à prendre des décisions éclairées.
 
 TES MISSIONS :
-- Analyser un portefeuille et ses différentes positions.
+- Analyser un portefeuille.
 - Étudier une action et son entreprise.
 - Évaluer une opportunité d'investissement.
 - Adapter les propositions au budget disponible.
 - Examiner les risques et les perspectives.
 - Comparer plusieurs entreprises.
-- Expliquer les décisions en termes accessibles à un débutant.
+- Expliquer tes conclusions simplement.
 
-PRÉFÉRENCES DE L'UTILISATEUR :
+PRÉFÉRENCES :
 - Marchés européens et américains.
 - Investissement à court et long terme.
 - Approche équilibrée du risque.
 - Exclusions éthiques : porc, alcool et jeux d'argent/casino.
 - Les banques sont acceptées.
-- Privilégier les investissements accessibles avec de petits montants.
-- Tenir compte de l'éligibilité au PEA lorsque c'est pertinent.
+- Tenir compte de l'éligibilité au PEA lorsque pertinent.
 
-RÈGLES IMPÉRATIVES :
-1. Utilise les données financières fournies dans le contexte.
-2. Ne prétends jamais avoir consulté des informations que tu n'as pas reçues.
+RÈGLES :
+1. Utilise les données financières fournies.
+2. Ne prétends jamais avoir consulté une information absente.
 3. Distingue les données récentes, anciennes et indisponibles.
-4. Ne fabrique jamais un cours, un résultat financier ou une actualité.
-5. Si tu n'as pas les positions du portefeuille, demande à l'utilisateur
-   de fournir les titres, quantités et prix d'achat.
-6. Ne confonds jamais une donnée manquante avec une mauvaise performance.
-7. Pour chaque recommandation, explique les raisons et les risques.
-8. Ne promets jamais un rendement.
-9. Ne donne jamais une certitude sur l'évolution future d'une action.
+4. Ne fabrique jamais de cours ou d'actualité.
+5. Si tu ne connais pas le portefeuille, demande les positions.
+6. Ne confonds pas donnée manquante et mauvaise performance.
+7. Explique les raisons et les risques de tes recommandations.
+8. Ne promets jamais de rendement.
+9. Ne prétends jamais connaître l'évolution future d'une action.
 10. Ne passe jamais d'ordre d'achat ou de vente.
 
-FORMAT DES RÉPONSES :
-
-Commence par une conclusion claire :
-- Acheter / Envisager un achat
+FORMAT :
+Commence par un avis clair :
+- Acheter / envisager un achat
 - Conserver
 - Renforcer avec prudence
-- Vendre / Envisager une vente
+- Vendre / envisager une vente
 - Attendre
 
-Puis présente :
+Présente ensuite :
 1. Mon avis.
 2. Les raisons principales.
 3. Les risques.
 4. Ce qui pourrait changer mon avis.
 
-Adapte la longueur à la question. Évite le jargon inutile.
-Si les données sont insuffisantes, dis-le clairement.
+Sois concret, honnête et accessible à un débutant.
 
-Tu es un assistant d'aide à la décision, pas un conseiller financier
-agréé. L'utilisateur garde toujours le contrôle de ses décisions.
+Tu es un assistant d'aide à la décision, pas un conseiller financier agréé.
+L'utilisateur conserve toujours le contrôle de ses décisions.
 """
 
 
 # =====================================================
-# STYLE
+# INTERFACE
 # =====================================================
 
 st.title("📈 Mon Agent Financier")
@@ -96,45 +94,38 @@ st.caption(
 
 with st.sidebar:
 
-    st.header("⚙️ Mon assistant")
+    st.header("Mon assistant")
 
-    st.write("**Marchés :** Europe et États-Unis")
-    st.write("**Style :** Investissement équilibré")
-    st.write("**Budget :** À définir selon tes projets")
+    st.write("Marchés : Europe et États-Unis")
+    st.write("Profil : équilibré")
+    st.write("Budget : selon tes projets")
 
     st.divider()
 
-    st.caption(
-        "Les analyses sont indicatives. "
-        "Aucun ordre boursier n'est exécuté."
-    )
-
-    if st.button("Nouvelle conversation", use_container_width=True):
+    if st.button("Nouvelle conversation"):
         st.session_state.messages = []
         st.rerun()
 
+    st.caption("Aucun ordre boursier n'est exécuté.")
+
 
 # =====================================================
-# CONNEXION À GEMINI
+# CONNEXION GEMINI
 # =====================================================
 
 try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-
-    client = genai.Client(api_key=API_KEY)
+    api_key = st.secrets["GEMINI_API_KEY"]
+    client = genai.Client(api_key=api_key)
 
 except Exception:
-
     st.error(
-        "Impossible de trouver la clé API Gemini. "
-        "Vérifie les Secrets de ton application Streamlit."
+        "Clé API introuvable. Vérifie les Secrets de Streamlit."
     )
-
     st.stop()
 
 
 # =====================================================
-# RECONNAISSANCE DE QUELQUES ENTREPRISES
+# ENTREPRISES CONNUES
 # =====================================================
 
 COMPANY_TICKERS = {
@@ -150,18 +141,17 @@ COMPANY_TICKERS = {
     "bnp paribas": "BNP.PA",
     "loreal": "OR.PA",
     "l'oréal": "OR.PA",
+    "safran": "SAF.PA",
+    "spineguard": "ALSGD.PA",
+    "haffner": "ALHAF.PA",
+    "valbiotis": "ALVAL.PA"
 }
 
-
-# =====================================================
-# IDENTIFICATION DES ACTIONS DANS LA QUESTION
-# =====================================================
 
 def find_tickers(question):
 
     candidates = []
 
-    # Recherche de symboles comme AIR.PA, AAPL, MSFT
     matches = re.findall(
         r"\b[A-Z]{1,5}(?:\.[A-Z]{1,3})?\b",
         question
@@ -169,8 +159,7 @@ def find_tickers(question):
 
     excluded = {
         "PEA", "ETF", "EUR", "USD", "USA",
-        "CAC", "IA", "TVA", "PER", "RSI",
-        "ACHAT", "VENTE", "ACTION", "ACTIONS"
+        "CAC", "IA", "TVA", "PER", "RSI"
     }
 
     for ticker in matches:
@@ -178,7 +167,6 @@ def find_tickers(question):
         if ticker not in excluded and ticker not in candidates:
             candidates.append(ticker)
 
-    # Recherche de noms d'entreprises connus
     lower_question = question.lower()
 
     for company, ticker in COMPANY_TICKERS.items():
@@ -190,282 +178,229 @@ def find_tickers(question):
 
 
 # =====================================================
-# RÉCUPÉRATION DES DONNÉES BOURSIÈRES
+# DONNÉES BOURSIÈRES
 # =====================================================
 
 @st.cache_data(ttl=900, show_spinner=False)
 def get_market_data(ticker):
 
-    result = {
-        "ticker": ticker,
-        "error": None
-    }
-
     try:
 
         stock = yf.Ticker(ticker)
-
         history = stock.history(period="1y")
 
         if history.empty:
-
-            result["error"] = "Aucun historique boursier disponible."
-            return result
+            return {"ticker": ticker, "error": "Aucune donnée disponible."}
 
         info = stock.info or {}
-
         close = history["Close"].dropna()
 
-        current_price = float(close.iloc[-1])
+        current = float(close.iloc[-1])
 
-        previous_price = (
-            float(close.iloc[-2])
-            if len(close) > 1 else None
-        )
+        def performance(days):
 
-        variation = None
-
-        if previous_price:
-            variation = (
-                (current_price / previous_price) - 1
-            ) * 100
-
-        def performance(period):
-
-            if len(close) < period:
+            if len(close) <= days:
                 return None
 
-            old_price = float(close.iloc[-period])
+            old = float(close.iloc[-days - 1])
 
-            if old_price == 0:
+            if old == 0:
                 return None
 
-            return round(
-                ((current_price / old_price) - 1) * 100,
-                2
-            )
+            return round((current / old - 1) * 100, 2)
 
-        # Données principales
-        result.update({
-
+        result = {
+            "ticker": ticker,
             "name": info.get("longName") or info.get("shortName"),
-
             "sector": info.get("sector"),
-
             "industry": info.get("industry"),
-
             "currency": info.get("currency"),
-
-            "price": round(current_price, 3),
-
-            "daily_change": (
-                round(variation, 2)
-                if variation is not None else None
-            ),
-
+            "price": round(current, 3),
+            "date": str(history.index[-1].date()),
             "performance_1_month": performance(22),
-
             "performance_3_months": performance(66),
-
             "performance_6_months": performance(126),
-
             "performance_1_year": performance(252),
-
             "market_cap": info.get("marketCap"),
-
             "PER": info.get("trailingPE"),
-
             "forward_PER": info.get("forwardPE"),
-
             "profit_margin": info.get("profitMargins"),
-
             "revenue_growth": info.get("revenueGrowth"),
-
             "total_debt": info.get("totalDebt"),
-
             "cash": info.get("totalCash"),
+            "news": []
+        }
 
-            "dividend_yield": info.get("dividendYield"),
-
-            "fifty_day_average": info.get("fiftyDayAverage"),
-
-            "two_hundred_day_average": info.get("twoHundredDayAverage"),
-
-            "data_date": str(history.index[-1].date())
-
-        })
-
-        # Actualités disponibles chez Yahoo Finance
         try:
 
-            news_items = stock.news or []
-
-            news_list = []
-
-            for item in news_items[:5]:
+            for item in (stock.news or [])[:5]:
 
                 content = item.get("content", item)
 
                 title = content.get("title")
 
-                publisher = content.get("publisher")
-
-                if not publisher:
+                if title:
 
                     provider = content.get("provider", {})
-                    publisher = provider.get("displayName")
 
-                if not title:
-                    continue
-
-                news_list.append({
-
-                    "title": title,
-
-                    "publisher": publisher or "Source inconnue",
-
-                    "date": content.get("pubDate"),
-
-                    "url": (
-                        content.get("canonicalUrl", {}).get("url")
-                        or content.get("clickThroughUrl", {}).get("url")
-                    )
-
-                })
-
-            result["news"] = news_list
+                    result["news"].append({
+                        "title": title,
+                        "publisher": provider.get(
+                            "displayName", "Source inconnue"
+                        ),
+                        "date": content.get("pubDate"),
+                        "url": content.get(
+                            "canonicalUrl", {}
+                        ).get("url")
+                    })
 
         except Exception:
-
-            result["news"] = []
-
-        return result
-
-    except Exception as e:
-
-        result["error"] = str(e)
+            pass
 
         return result
 
+    except Exception as error:
+
+        return {
+            "ticker": ticker,
+            "error": str(error)
+        }
+
 
 # =====================================================
-# CONSTRUCTION DU CONTEXTE FINANCIER
+# CONTEXTE FINANCIER
 # =====================================================
 
-def build_financial_context(question):
+def build_context(question):
 
     tickers = find_tickers(question)
 
     if not tickers:
 
         return (
-            "Aucun symbole boursier précis n'a été identifié dans "
-            "la question. Tu ne disposes donc pas de données de marché "
-            "récupérées automatiquement pour cette demande. "
-            "Ne prétends pas avoir effectué un scan du marché."
+            "Aucun symbole boursier identifié. "
+            "Aucune donnée de marché spécifique n'a été récupérée. "
+            "Ne prétends pas avoir effectué une analyse de marché exhaustive."
         )
 
-    context = []
-
-    context.append(
-        "DONNÉES BOURSIÈRES RÉCUPÉRÉES AUTOMATIQUEMENT :"
-    )
+    context = ["DONNÉES BOURSIÈRES :"]
 
     for ticker in tickers:
 
         data = get_market_data(ticker)
 
-        context.append("\n-------------------------")
-        context.append(f"SYMBOLE : {ticker}")
-
-        if data.get("error"):
-
-            context.append(
-                "Erreur de récupération : " + data["error"]
-            )
-
-            continue
+        context.append("\n--- " + ticker + " ---")
 
         for key, value in data.items():
 
-            if key not in ["news", "error"] and value is not None:
-
+            if value is not None:
                 context.append(f"{key} : {value}")
 
-        news = data.get("news", [])
-
-        context.append("ACTUALITÉS DISPONIBLES :")
-
-        if news:
-
-            for article in news:
-
-                context.append(
-                    f"- {article['title']} "
-                    f"({article['publisher']}, {article['date']})"
-                )
-
-                if article.get("url"):
-                    context.append(
-                        "Lien : " + article["url"]
-                    )
-
-        else:
-
-            context.append(
-                "Aucune actualité récupérée."
-            )
-
     context.append(
-        "\nIMPORTANT : les données peuvent être différées, "
-        "incomplètes ou indisponibles. Vérifie leur date."
+        "\nLes cours peuvent être différés. "
+        "Les actualités récupérées ne sont pas exhaustives."
     )
 
     return "\n".join(context)
 
 
 # =====================================================
-# HISTORIQUE DE CONVERSATION
+# APPEL DES MODÈLES AVEC SECOURS AUTOMATIQUE
+# =====================================================
+
+def ask_gemini(history, context):
+
+    errors = []
+
+    for model in MODELS:
+
+        for attempt in range(2):
+
+            try:
+
+                response = client.models.generate_content(
+                    model=model,
+                    contents=history + [
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_text(text=context)
+                            ]
+                        )
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.4,
+                        max_output_tokens=2500
+                    )
+                )
+
+                if response.text:
+                    return response.text, model
+
+                errors.append(
+                    f"{model} : réponse vide"
+                )
+
+                break
+
+            except Exception as error:
+
+                error_text = str(error)
+
+                errors.append(
+                    f"{model}, essai {attempt + 1} : {error_text}"
+                )
+
+                temporary_error = (
+                    "503" in error_text
+                    or "429" in error_text
+                    or "UNAVAILABLE" in error_text
+                    or "RESOURCE_EXHAUSTED" in error_text
+                )
+
+                if temporary_error and attempt == 0:
+
+                    time.sleep(3)
+                    continue
+
+                break
+
+    raise RuntimeError(
+        "Tous les modèles sont momentanément indisponibles.\n\n"
+        + "\n".join(errors[-4:])
+    )
+
+
+# =====================================================
+# CONVERSATION
 # =====================================================
 
 if "messages" not in st.session_state:
-
     st.session_state.messages = []
 
-
-# =====================================================
-# AFFICHAGE DE LA CONVERSATION
-# =====================================================
 
 if not st.session_state.messages:
 
     st.info(
-        "Bonjour ! Je suis ton assistant financier. "
-        "Pose-moi une question sur ton portefeuille, "
+        "Bonjour ! Pose-moi une question sur ton portefeuille, "
         "une action ou un investissement."
     )
 
-    st.markdown("### Quelques exemples")
-
     st.markdown("""
-    - Analyse Airbus et dis-moi si elle est intéressante.
-    - J'ai 50 € à investir, que me conseilles-tu ?
-    - Analyse mon portefeuille et dis-moi quoi faire.
+    **Exemples :**
+    - Analyse Airbus et dis-moi si je dois conserver.
+    - J'ai 50 € à investir. Que me conseilles-tu ?
+    - Analyse mon portefeuille.
     - Compare Airbus et Safran.
-    - Quels sont les risques de mon investissement ?
     """)
 
 
 for message in st.session_state.messages:
 
     with st.chat_message(message["role"]):
-
         st.markdown(message["content"])
 
-
-# =====================================================
-# ENVOI D'UNE QUESTION
-# =====================================================
 
 question = st.chat_input(
     "Pose ta question à ton agent financier..."
@@ -475,44 +410,36 @@ question = st.chat_input(
 if question:
 
     st.session_state.messages.append({
-
         "role": "user",
-
         "content": question
-
     })
 
     with st.chat_message("user"):
-
         st.markdown(question)
 
     with st.chat_message("assistant"):
 
-        with st.spinner(
-            "J'analyse ta demande et les données disponibles..."
-        ):
+        with st.spinner("Ton agent analyse ta demande..."):
 
             try:
 
-                financial_context = build_financial_context(question)
+                context = f"""
+DATE : {datetime.now().strftime('%d/%m/%Y')}
 
-                current_date = datetime.now().strftime("%d/%m/%Y")
-
-                complete_context = f"""
-DATE DU JOUR : {current_date}
-
-QUESTION DE L'UTILISATEUR :
+QUESTION :
 {question}
 
-{financial_context}
+{build_context(question)}
 
-Réponds maintenant à la question de l'utilisateur.
-Sois précis, honnête et concret.
+Réponds à la question en tenant compte de toutes les informations
+disponibles. Si les données sont insuffisantes, explique-le.
 """
 
                 history = []
 
-                for message in st.session_state.messages[:-1]:
+                previous_messages = st.session_state.messages[:-1]
+
+                for message in previous_messages:
 
                     role = (
                         "user"
@@ -531,58 +458,34 @@ Sois précis, honnête et concret.
                         )
                     )
 
-                history.append(
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_text(
-                                text=complete_context
-                            )
-                        ]
-                    )
+                answer, selected_model = ask_gemini(
+                    history,
+                    context
                 )
-
-                response = client.models.generate_content(
-
-                    model=MODEL,
-
-                    contents=history,
-
-                    config=types.GenerateContentConfig(
-
-                        system_instruction=SYSTEM_INSTRUCTION,
-
-                        temperature=0.4,
-
-                        max_output_tokens=2500
-
-                    )
-
-                )
-
-                answer = response.text
-
-                if not answer:
-
-                    answer = (
-                        "Je n'ai pas réussi à produire une réponse. "
-                        "Essaie de reformuler ta question."
-                    )
 
                 st.markdown(answer)
 
                 st.session_state.messages.append({
-
                     "role": "assistant",
-
                     "content": answer
-
                 })
 
-            except Exception as e:
-
-                st.error(
-                    "Une erreur est survenue pendant l'analyse."
+                st.caption(
+                    f"Modèle utilisé : {selected_model}"
                 )
 
-                st.code(str(e))
+            except Exception as error:
+
+                st.error(
+                    "Je n'ai pas réussi à obtenir une réponse "
+                    "des modèles IA pour le moment."
+                )
+
+                st.warning(
+                    "Cela peut être dû à une surcharge temporaire "
+                    "ou à une limite d'utilisation de l'API."
+                )
+
+                with st.expander("Détails techniques"):
+
+                    st.code(str(error))
