@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import numpy as np
+from fundamentals import get_fundamentals, analyze_fundamentals, format_number
 from datetime import datetime
 
 st.set_page_config(
@@ -17,7 +18,7 @@ st.caption("Assistant personnel d'analyse des marchés financiers")
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Choisir une rubrique",
-    ["Tableau de bord", "Analyse d'une action", "Actualités", "Mon portefeuille"]
+["Tableau de bord", "Analyse d'une action", "Analyse fondamentale", "Actualités", "Mon portefeuille"]
 )
 
 
@@ -129,6 +130,86 @@ elif page == "Analyse d'une action":
 
                 except Exception as e:
                     st.error(f"Erreur pendant l'analyse : {e}")
+        else:
+            st.warning("Entre un symbole boursier.")
+
+elif page == "Analyse fondamentale":
+    st.header("🏢 Analyse fondamentale d'une entreprise")
+
+    ticker_fund = st.text_input(
+        "Symbole de l'entreprise",
+        placeholder="Exemple : AIR.PA, MC.PA ou MSFT"
+    )
+
+    if st.button("Analyser les fondamentaux"):
+        if ticker_fund:
+            with st.spinner("Récupération des données financières..."):
+                data = get_fundamentals(ticker_fund)
+
+                if data.get("error"):
+                    st.error(data["error"])
+                else:
+                    st.subheader(data["name"])
+
+                    st.write(
+                        f"Secteur : {data.get('sector') or 'Non disponible'}"
+                    )
+                    st.write(
+                        f"Industrie : {data.get('industry') or 'Non disponible'}"
+                    )
+
+                    currency = data.get("currency") or ""
+
+                    st.subheader("Valorisation")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric(
+                        "Capitalisation",
+                        format_number(data.get("market_cap"), currency)
+                    )
+                    c2.metric(
+                        "PER",
+                        f"{data['pe_ratio']:.2f}" if data.get("pe_ratio") is not None else "N/D"
+                    )
+                    c3.metric(
+                        "PER prévisionnel",
+                        f"{data['forward_pe']:.2f}" if data.get("forward_pe") is not None else "N/D"
+                    )
+
+                    st.subheader("Rentabilité")
+                    c1, c2 = st.columns(2)
+                    c1.metric(
+                        "Marge opérationnelle",
+                        f"{data['operating_margin']:.2f}%" if data.get("operating_margin") is not None else "N/D"
+                    )
+                    c2.metric(
+                        "Marge nette",
+                        f"{data['net_margin']:.2f}%" if data.get("net_margin") is not None else "N/D"
+                    )
+
+                    st.subheader("Santé financière")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Chiffre d'affaires", format_number(data.get("revenue"), currency))
+                    c2.metric("Résultat net", format_number(data.get("net_income"), currency))
+                    c3.metric("Dette totale", format_number(data.get("total_debt"), currency))
+
+                    st.write(
+                        "Trésorerie :",
+                        format_number(data.get("cash"), currency)
+                    )
+                    st.write(
+                        "Flux de trésorerie disponible :",
+                        format_number(data.get("free_cash_flow"), currency)
+                    )
+
+                    st.subheader("Observations de l'analyste")
+                    for observation in analyze_fundamentals(data):
+                        st.write("• " + observation)
+
+                    st.caption(
+                        "Données indicatives issues de Yahoo Finance. "
+                        "Les informations peuvent être incomplètes ou différées. "
+                        "Cette analyse ne constitue pas un conseil financier."
+                    )
         else:
             st.warning("Entre un symbole boursier.")
 
