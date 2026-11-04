@@ -136,54 +136,9 @@ elif page == "Analyse d'une action":
         else:
             st.warning("Entre un symbole boursier.")
 
+
 elif page == "Analyse fondamentale":
     st.header("🏢 Analyse fondamentale d'une entreprise")
-
-# --- NOTATION DE L'ENTREPRISE ---
-st.divider()
-st.subheader("⭐ Score fondamental")
-
-result = score_fundamentals(data)
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric(
-    "Score fondamental",
-    f"{result['total_score']}/100"
-)
-
-col2.metric(
-    "Fiabilité des données",
-    f"{result['reliability']:.0f}%"
-)
-
-col3.metric(
-    "Diagnostic",
-    result["verdict"]
-)
-
-st.progress(result["total_score"] / 100)
-
-st.markdown("### Détail de la notation")
-
-for category, information in result["categories"].items():
-    score = information["score"]
-    maximum = information["maximum"]
-
-    st.write(f"**{category} : {score}/{maximum}**")
-    st.progress(score / maximum)
-    st.caption(information["explanation"])
-
-if result["missing_data"]:
-    st.warning(
-        "Données manquantes : "
-        + ", ".join(result["missing_data"])
-    )
-
-st.caption(
-    "Cette notation est un indicateur pédagogique basé sur des règles "
-    "simplifiées. Elle ne constitue pas un conseil d'achat ou de vente."
-)
 
     ticker_fund = st.text_input(
         "Symbole de l'entreprise",
@@ -195,72 +150,138 @@ st.caption(
             with st.spinner("Récupération des données financières..."):
                 data = get_fundamentals(ticker_fund)
 
-                if data.get("error"):
-                    st.error(data["error"])
-                else:
-                    st.subheader(data["name"])
+            if data.get("error"):
+                st.error(data["error"])
 
-                    st.write(
-                        f"Secteur : {data.get('sector') or 'Non disponible'}"
-                    )
-                    st.write(
-                        f"Industrie : {data.get('industry') or 'Non disponible'}"
+            else:
+                st.subheader(data["name"])
+
+                st.write(
+                    f"Secteur : {data.get('sector') or 'Non disponible'}"
+                )
+                st.write(
+                    f"Industrie : {data.get('industry') or 'Non disponible'}"
+                )
+
+                currency = data.get("currency") or ""
+
+                st.subheader("Valorisation")
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Capitalisation",
+                    format_number(data.get("market_cap"), currency)
+                )
+                c2.metric(
+                    "PER",
+                    f"{data['pe_ratio']:.2f}"
+                    if data.get("pe_ratio") is not None else "N/D"
+                )
+                c3.metric(
+                    "PER prévisionnel",
+                    f"{data['forward_pe']:.2f}"
+                    if data.get("forward_pe") is not None else "N/D"
+                )
+
+                st.subheader("Rentabilité")
+
+                c1, c2 = st.columns(2)
+
+                c1.metric(
+                    "Marge opérationnelle",
+                    f"{data['operating_margin']:.2f}%"
+                    if data.get("operating_margin") is not None else "N/D"
+                )
+                c2.metric(
+                    "Marge nette",
+                    f"{data['net_margin']:.2f}%"
+                    if data.get("net_margin") is not None else "N/D"
+                )
+
+                st.subheader("Santé financière")
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Chiffre d'affaires",
+                    format_number(data.get("revenue"), currency)
+                )
+                c2.metric(
+                    "Résultat net",
+                    format_number(data.get("net_income"), currency)
+                )
+                c3.metric(
+                    "Dette totale",
+                    format_number(data.get("total_debt"), currency)
+                )
+
+                st.write(
+                    "Trésorerie :",
+                    format_number(data.get("cash"), currency)
+                )
+                st.write(
+                    "Flux de trésorerie disponible :",
+                    format_number(data.get("free_cash_flow"), currency)
+                )
+
+                st.subheader("Observations de l'analyste")
+
+                for observation in analyze_fundamentals(data):
+                    st.write("• " + observation)
+
+                # SCORE FONDAMENTAL
+                st.divider()
+                st.subheader("⭐ Score fondamental")
+
+                result = score_fundamentals(data)
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric(
+                    "Score fondamental",
+                    f"{result['total_score']}/100"
+                )
+                col2.metric(
+                    "Fiabilité des données",
+                    f"{result['reliability']:.0f}%"
+                )
+                col3.metric(
+                    "Diagnostic",
+                    result["verdict"]
+                )
+
+                st.progress(result["total_score"] / 100)
+
+                st.markdown("### Détail de la notation")
+
+                for category, information in result["categories"].items():
+                    score = information["score"]
+                    maximum = information["maximum"]
+
+                    st.write(f"**{category} : {score}/{maximum}**")
+                    st.progress(score / maximum)
+                    st.caption(information["explanation"])
+
+                if result["missing_data"]:
+                    st.warning(
+                        "Données manquantes : "
+                        + ", ".join(result["missing_data"])
                     )
 
-                    currency = data.get("currency") or ""
+                st.caption(
+                    "Notation pédagogique fondée sur des règles simplifiées. "
+                    "Elle ne constitue pas un conseil d'achat ou de vente."
+                )
 
-                    st.subheader("Valorisation")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric(
-                        "Capitalisation",
-                        format_number(data.get("market_cap"), currency)
-                    )
-                    c2.metric(
-                        "PER",
-                        f"{data['pe_ratio']:.2f}" if data.get("pe_ratio") is not None else "N/D"
-                    )
-                    c3.metric(
-                        "PER prévisionnel",
-                        f"{data['forward_pe']:.2f}" if data.get("forward_pe") is not None else "N/D"
-                    )
+                st.caption(
+                    "Données indicatives issues de Yahoo Finance. "
+                    "Elles peuvent être incomplètes ou différées."
+                )
 
-                    st.subheader("Rentabilité")
-                    c1, c2 = st.columns(2)
-                    c1.metric(
-                        "Marge opérationnelle",
-                        f"{data['operating_margin']:.2f}%" if data.get("operating_margin") is not None else "N/D"
-                    )
-                    c2.metric(
-                        "Marge nette",
-                        f"{data['net_margin']:.2f}%" if data.get("net_margin") is not None else "N/D"
-                    )
-
-                    st.subheader("Santé financière")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Chiffre d'affaires", format_number(data.get("revenue"), currency))
-                    c2.metric("Résultat net", format_number(data.get("net_income"), currency))
-                    c3.metric("Dette totale", format_number(data.get("total_debt"), currency))
-
-                    st.write(
-                        "Trésorerie :",
-                        format_number(data.get("cash"), currency)
-                    )
-                    st.write(
-                        "Flux de trésorerie disponible :",
-                        format_number(data.get("free_cash_flow"), currency)
-                    )
-
-                    st.subheader("Observations de l'analyste")
-                    for observation in analyze_fundamentals(data):
-                        st.write("• " + observation)
-
-                    st.caption(
-                        "Données indicatives issues de Yahoo Finance. "
-                        "Les informations peuvent être incomplètes ou différées. "
-                        "Cette analyse ne constitue pas un conseil financier."
-                    )
         else:
             st.warning("Entre un symbole boursier.")
+
 
 elif page == "Comparateur":
     st.header("⚖️ Comparateur d'entreprises")
