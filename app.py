@@ -6,6 +6,7 @@ import numpy as np
 from fundamentals import get_fundamentals, analyze_fundamentals, format_number
 from datetime import datetime
 from comparison import compare_companies, compare_observations
+from portfolio import analyze_portfolio
 
 st.set_page_config(
     page_title="Mon Agent Financier",
@@ -260,9 +261,104 @@ elif page == "Actualités":
     st.header("📰 Actualités financières")
     st.info("La veille économique et l'analyse des actualités seront ajoutées prochainement.")
 
+
 elif page == "Mon portefeuille":
     st.header("💼 Mon portefeuille")
-    st.info("Le suivi détaillé de tes investissements sera ajouté prochainement.")
+    st.write(
+        "Renseigne tes positions pour obtenir une estimation "
+        "de leur valeur actuelle et de leur performance."
+    )
+
+    st.info(
+        "Pour cette première version, utilise des actions cotées en euros "
+        "afin d'éviter les erreurs liées aux conversions de devises."
+    )
+
+    positions = []
+
+    with st.form("portfolio_form"):
+        st.subheader("Tes positions")
+
+        for i in range(1, 6):
+            st.markdown(f"**Position {i}**")
+            col1, col2, col3 = st.columns(3)
+
+            ticker = col1.text_input(
+                "Symbole Yahoo Finance",
+                key=f"ticker_{i}",
+                placeholder="AIR.PA"
+            )
+            quantity = col2.number_input(
+                "Quantité",
+                min_value=0.0,
+                step=1.0,
+                key=f"quantity_{i}"
+            )
+            average_price = col3.number_input(
+                "Prix moyen d'achat (€)",
+                min_value=0.0,
+                step=0.01,
+                format="%.4f",
+                key=f"average_{i}"
+            )
+
+            if ticker.strip() and quantity > 0 and average_price > 0:
+                positions.append({
+                    "ticker": ticker.strip().upper(),
+                    "quantity": quantity,
+                    "average_price": average_price
+                })
+
+        submitted = st.form_submit_button(
+            "Analyser mon portefeuille",
+            type="primary"
+        )
+
+    if submitted:
+        if not positions:
+            st.warning("Ajoute au moins une position complète.")
+        else:
+            with st.spinner("Analyse de ton portefeuille en cours..."):
+                df, summary = analyze_portfolio(positions)
+
+            if df.empty:
+                st.error(
+                    "Aucune donnée n'a pu être récupérée. "
+                    "Vérifie les symboles Yahoo Finance."
+                )
+            else:
+                st.subheader("Vue d'ensemble")
+
+                col1, col2 = st.columns(2)
+                col1.metric(
+                    "Montant investi",
+                    f"{summary['invested']:.2f} €"
+                )
+                col2.metric(
+                    "Valeur actuelle estimée",
+                    f"{summary['value']:.2f} €"
+                )
+
+                col3, col4 = st.columns(2)
+                col3.metric(
+                    "Gain / perte",
+                    f"{summary['gain']:+.2f} €"
+                )
+                col4.metric(
+                    "Performance globale",
+                    f"{summary['performance']:+.2f} %"
+                )
+
+                st.divider()
+                st.subheader("Détail de tes positions")
+                st.dataframe(df, use_container_width=True)
+
+                st.caption(
+                    "Estimations basées sur les cours récupérés via Yahoo Finance. "
+                    "Les frais, dividendes et éventuels écarts avec Trade Republic "
+                    "ne sont pas intégrés."
+                )
+
 
 st.divider()
 st.caption(f"Agent financier personnel — {datetime.now().strftime('%d/%m/%Y')}")
