@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
+import numpy as np
 from datetime import datetime
 
 st.set_page_config(
@@ -11,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📈 Mon Agent Financier")
-st.caption("Ton assistant personnel d'analyse des marchés financiers")
+st.caption("Assistant personnel d'analyse des marchés financiers")
 
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
@@ -19,55 +20,125 @@ page = st.sidebar.radio(
     ["Tableau de bord", "Analyse d'une action", "Actualités", "Mon portefeuille"]
 )
 
+
+def calculate_rsi(data, period=14):
+    delta = data.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
+
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
 if page == "Tableau de bord":
     st.header("Bienvenue sur ton espace financier")
-
-    st.write(
-        "Ton agent personnel t'aidera à suivre les marchés, "
-        "analyser les entreprises et comprendre ton portefeuille."
-    )
-
-    st.info("🚧 Projet en construction : les fonctionnalités arriveront progressivement.")
+    st.write("Surveille les marchés et analyse tes investissements.")
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Marchés suivis", "Europe et USA")
     col2.metric("Budget mensuel", "0 €")
     col3.metric("Statut", "En construction")
 
+    st.info("Ton assistant financier évolue progressivement.")
+
 elif page == "Analyse d'une action":
-    st.header("🔎 Analyser une action")
+    st.header("🔎 Analyse technique")
 
     ticker = st.text_input(
         "Symbole boursier",
-        placeholder="Exemple : AIR.PA, MC.PA ou AAPL"
+        placeholder="Exemple : AIR.PA ou AAPL"
     )
 
     if st.button("Lancer l'analyse"):
         if ticker:
-            with st.spinner("Récupération des données..."):
+            with st.spinner("Analyse des données financières..."):
                 try:
                     stock = yf.Ticker(ticker)
-                    history = stock.history(period="6mo")
+                    history = stock.history(period="1y")
 
-                    if history.empty:
-                        st.error("Aucune donnée trouvée. Vérifie le symbole.")
+                    if history.empty or len(history) < 50:
+                        st.error("Données insuffisantes pour cette analyse.")
                     else:
-                        st.subheader(ticker.upper())
-                        st.line_chart(history["Close"])
-                        st.write("Dernières données disponibles :")
-                        st.dataframe(history.tail())
+                        close = history["Close"]
+                        volume = history["Volume"]
+
+                        history["MM50"] = close.rolling(50).mean()
+                        history["MM200"] = close.rolling(200).mean()
+                        history["RSI"] = calculate_rsi(close)
+
+                        current = close.iloc[-1]
+                        previous = close.iloc[-2]
+                        variation = ((current / previous) - 1) * 100
+
+                        one_month = ((current / close.iloc[-22]) - 1) * 100
+                        three_months = ((current / close.iloc[-66]) - 1) * 100
+                        six_months = ((current / close.iloc[-126]) - 1) * 100
+
+                        volatility = close.pct_change().std() * np.sqrt(252) * 100
+                        rsi = history["RSI"].iloc[-1]
+
+                        st.subheader(f"Analyse de {ticker.upper()}")
+
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Dernier cours", f"{current:.2f}")
+                        c2.metric("Variation du jour", f"{variation:.2f}%")
+                        c3.metric("RSI (14)", f"{rsi:.1f}")
+
+                        st.subheader("Performances historiques")
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("1 mois", f"{one_month:.2f}%")
+                        c2.metric("3 mois", f"{three_months:.2f}%")
+                        c3.metric("6 mois", f"{six_months:.2f}%")
+
+                        st.subheader("Évolution du cours et moyennes mobiles")
+                        st.line_chart(history[["Close", "MM50", "MM200"]])
+
+                        st.subheader("Volume des échanges")
+                        st.bar_chart(volume)
+
+                        st.subheader("Volatilité annualisée")
+                        st.metric("Volatilité estimée", f"{volatility:.2f}%")
+
+                        st.subheader("Interprétation des indicateurs")
+
+                        if rsi >= 70:
+                            st.warning("RSI élevé : situation de surachat possible.")
+                        elif rsi <= 30:
+                            st.warning("RSI faible : situation de survente possible.")
+                        else:
+                            st.info("RSI dans une zone intermédiaire.")
+
+                        if current > history["MM50"].iloc[-1]:
+                            st.write("Le cours est au-dessus de sa moyenne mobile 50 jours.")
+                        else:
+                            st.write("Le cours est sous sa moyenne mobile 50 jours.")
+
+                        if len(history) >= 200:
+                            if current > history["MM200"].iloc[-1]:
+                                st.write("Le cours est au-dessus de sa moyenne mobile 200 jours.")
+                            else:
+                                st.write("Le cours est sous sa moyenne mobile 200 jours.")
+
+                        st.caption(
+                            "Données indicatives issues de Yahoo Finance. "
+                            "Les indicateurs techniques ne prédisent pas les performances futures."
+                        )
+
                 except Exception as e:
-                    st.error(f"Erreur : {e}")
+                    st.error(f"Erreur pendant l'analyse : {e}")
         else:
             st.warning("Entre un symbole boursier.")
 
 elif page == "Actualités":
     st.header("📰 Actualités financières")
-    st.info("La récupération et l'analyse des actualités seront ajoutées prochainement.")
+    st.info("La veille économique et l'analyse des actualités seront ajoutées prochainement.")
 
 elif page == "Mon portefeuille":
     st.header("💼 Mon portefeuille")
-    st.info("Nous ajouterons ici tes investissements et le suivi de tes performances.")
+    st.info("Le suivi détaillé de tes investissements sera ajouté prochainement.")
 
 st.divider()
 st.caption(f"Agent financier personnel — {datetime.now().strftime('%d/%m/%Y')}")
