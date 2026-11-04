@@ -5,6 +5,7 @@ import yfinance as yf
 import numpy as np
 from fundamentals import get_fundamentals, analyze_fundamentals, format_number
 from datetime import datetime
+from comparison import compare_companies, compare_observations
 
 st.set_page_config(
     page_title="Mon Agent Financier",
@@ -18,7 +19,7 @@ st.caption("Assistant personnel d'analyse des marchés financiers")
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Choisir une rubrique",
-["Tableau de bord", "Analyse d'une action", "Analyse fondamentale", "Actualités", "Mon portefeuille"]
+["Tableau de bord", "Analyse d'une action", "Analyse fondamentale", "Comparateur", "Actualités", "Mon portefeuille"]
 )
 
 
@@ -212,6 +213,48 @@ elif page == "Analyse fondamentale":
                     )
         else:
             st.warning("Entre un symbole boursier.")
+
+elif page == "Comparateur":
+    st.header("⚖️ Comparateur d'entreprises")
+    st.write("Compare jusqu'à trois entreprises cotées.")
+
+    tickers_input = st.text_input(
+        "Symboles boursiers séparés par des virgules",
+        value="AIR.PA, BA, LMT",
+        help="Exemple : AIR.PA, MC.PA, MSFT"
+    )
+
+    if st.button("Comparer les entreprises"):
+        tickers = list(dict.fromkeys(
+            ticker.strip().upper()
+            for ticker in tickers_input.split(",")
+            if ticker.strip()
+        ))
+
+        if len(tickers) < 2:
+            st.warning("Entre au moins deux entreprises.")
+        elif len(tickers) > 3:
+            st.warning("Trois entreprises maximum pour le moment.")
+        else:
+            with st.spinner("Comparaison financière en cours..."):
+                comparison = compare_companies(tickers)
+
+                st.subheader("Résultats comparatifs")
+                st.dataframe(
+                    comparison,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.subheader("Observations")
+                for observation in compare_observations(comparison):
+                    st.write("• " + observation)
+
+                st.caption(
+                    "Les données peuvent être incomplètes ou différées. "
+                    "Les entreprises de secteurs différents ne sont pas "
+                    "nécessairement comparables directement."
+                )
 
 elif page == "Actualités":
     st.header("📰 Actualités financières")
