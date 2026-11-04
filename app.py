@@ -7,6 +7,7 @@ from fundamentals import get_fundamentals, analyze_fundamentals, format_number
 from datetime import datetime
 from comparison import compare_companies, compare_observations
 from portfolio import analyze_portfolio
+from scoring import score_fundamentals
 
 st.set_page_config(
     page_title="Mon Agent Financier",
@@ -137,6 +138,52 @@ elif page == "Analyse d'une action":
 
 elif page == "Analyse fondamentale":
     st.header("🏢 Analyse fondamentale d'une entreprise")
+
+# --- NOTATION DE L'ENTREPRISE ---
+st.divider()
+st.subheader("⭐ Score fondamental")
+
+result = score_fundamentals(data)
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "Score fondamental",
+    f"{result['total_score']}/100"
+)
+
+col2.metric(
+    "Fiabilité des données",
+    f"{result['reliability']:.0f}%"
+)
+
+col3.metric(
+    "Diagnostic",
+    result["verdict"]
+)
+
+st.progress(result["total_score"] / 100)
+
+st.markdown("### Détail de la notation")
+
+for category, information in result["categories"].items():
+    score = information["score"]
+    maximum = information["maximum"]
+
+    st.write(f"**{category} : {score}/{maximum}**")
+    st.progress(score / maximum)
+    st.caption(information["explanation"])
+
+if result["missing_data"]:
+    st.warning(
+        "Données manquantes : "
+        + ", ".join(result["missing_data"])
+    )
+
+st.caption(
+    "Cette notation est un indicateur pédagogique basé sur des règles "
+    "simplifiées. Elle ne constitue pas un conseil d'achat ou de vente."
+)
 
     ticker_fund = st.text_input(
         "Symbole de l'entreprise",
